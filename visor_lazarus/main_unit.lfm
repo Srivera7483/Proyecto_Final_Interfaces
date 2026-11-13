@@ -1,0 +1,182 @@
+object FormVisor: TFormVisor
+  Left = 240
+  Height = 310
+  Top = 160
+  Width = 1060
+  BorderIcons = [biSystemMenu, biMinimize]
+  BorderStyle = bsSingle
+  Caption = 'By Alberto Caro'
+  ClientHeight = 310
+  ClientWidth = 1060
+  Color = clBtnFace
+  Font.Color = clWindowText
+  Font.Height = -11
+  Font.Name = 'Tahoma'
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  Position = poScreenCenter
+  ShowHint = True
+  LCLVersion = '4.8.0.0'
+  object lblMainTitle: TLabel
+    Left = 250
+    Height = 24
+    Top = 14
+    Width = 460
+    Alignment = taCenter
+    AutoSize = False
+    Caption = 'Material Particulado 2.5 um'
+    Font.Color = clBlack
+    Font.Height = -19
+    Font.Name = 'Arial'
+    Font.Style = [fsBold]
+    ParentFont = False
+  end
+  object btnSave: TSpeedButton
+    Left = 780
+    Height = 32
+    Hint = 'Guardar captura de pantalla en captura.png'
+    Top = 10
+    Width = 85
+    Caption = 'Save'
+    Font.Color = clBlack
+    Font.Height = -12
+    Font.Name = 'Tahoma'
+    Font.Style = [fsBold]
+    ParentFont = False
+    ShowHint = True
+    OnClick = btnSaveClick
+  end
+  object btnGridToggle: TSpeedButton
+    Left = 875
+    Height = 32
+    Hint = 'Activar / Desactivar la grilla del visor'
+    Top = 10
+    Width = 85
+    Caption = 'On/off'
+    Font.Color = clBlack
+    Font.Height = -12
+    Font.Name = 'Tahoma'
+    Font.Style = [fsBold]
+    ParentFont = False
+    ShowHint = True
+    OnClick = btnGridToggleClick
+  end
+  object btnChangeBg: TSpeedButton
+    Left = 968
+    Height = 44
+    Hint = 'Cambiar figura de fondo (background) del visor'
+    Top = 200
+    Width = 78
+    Caption = 'Click'
+    Font.Color = clBlack
+    Font.Height = -12
+    Font.Name = 'Tahoma'
+    Font.Style = [fsBold]
+    ParentFont = False
+    ShowHint = True
+    OnClick = btnChangeBgClick
+  end
+  object ChartVisor: TChart
+    Left = 15
+    Height = 245
+    Top = 50
+    Width = 945
+    AxisList = <    
+      item
+        Grid.Color = clBlack
+        Grid.Style = psDot
+        Grid.Visible = False
+        Marks.LabelBrush.Style = bsClear
+        Minors = <>
+        Range.Max = 200
+        Range.Min = 0
+        Range.UseMax = True
+        Range.UseMin = True
+        Title.LabelFont.Color = clBlack
+        Title.LabelFont.Height = -14
+        Title.LabelFont.Name = 'Arial'
+        Title.LabelFont.Style = [fsBold]
+        Title.Visible = True
+        Title.Caption = '[ug/m3]'
+      end    
+      item
+        Alignment = calBottom
+        Grid.Color = clBlack
+        Grid.Style = psDot
+        Grid.Visible = False
+        Marks.LabelBrush.Style = bsClear
+        Minors = <>
+        Range.Max = 29
+        Range.Min = 0
+        Range.UseMax = True
+        Range.UseMin = True
+        Title.LabelFont.Color = clBlack
+        Title.LabelFont.Height = -14
+        Title.LabelFont.Name = 'Arial'
+        Title.LabelFont.Style = [fsBold]
+        Title.Visible = True
+        Title.Caption = 'Sampling MP 2.5um'
+      end>
+    BackColor = clWhite
+    Foot.Brush.Color = clBtnFace
+    Foot.Font.Color = clBlue
+    Legend.Alignment = laTopRight
+    Legend.BackgroundBrush.Color = clWhite
+    Legend.Frame.Color = clBlack
+    Legend.Frame.Visible = True
+    Legend.UseSidebar = False
+    Legend.Visible = True
+    OnBeforeDrawBackWall = ChartVisorBeforeDrawBackWall
+    Title.Brush.Color = clBtnFace
+    Title.Font.Color = clBlue
+    Title.Text.Strings = (
+      'TAChart'
+    )
+    Title.Visible = False
+    object SerieMP25: TLineSeries
+      AxisIndexX = 1
+      AxisIndexY = 0
+      LinePen.Color = clRed
+      LinePen.Width = 1
+      Marks.Arrow.Visible = False
+      Marks.Distance = 4
+      Marks.Format = '%0:.0f'
+      Marks.Frame.Color = clBlack
+      Marks.Frame.Visible = True
+      Marks.LabelBrush.Color = clWhite
+      Marks.LabelBrush.Style = bsSolid
+      Marks.Style = smsValue
+      Marks.Visible = True
+      Pointer.Brush.Color = clHighlight
+      Pointer.HorizSize = 4
+      Pointer.Pen.Color = clYellow
+      Pointer.Pen.Width = 1
+      Pointer.Style = psRectangle
+      Pointer.VertSize = 4
+      Pointer.Visible = True
+      SeriesColor = clRed
+      ShowPoints = True
+      Title = 'MP 2.5 um'
+    end
+  end
+  object LazSerial1: TLazSerial
+    Active = False
+    BaudRate = br__9600
+    DataBits = db8bits
+    Parity = pNone
+    FlowControl = fcNone
+    StopBits = sbOne
+    Device = 'COM2'
+    RcvLineCRLF = False
+    OnRxData = LazSerial1RxData
+    Left = 980
+    Top = 60
+  end
+  object tmrFallbackSim: TTimer
+    Enabled = False
+    Interval = 1000
+    OnTimer = tmrFallbackSimTimer
+    Left = 980
+    Top = 120
+  end
+end
