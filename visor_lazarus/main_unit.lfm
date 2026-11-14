@@ -121,7 +121,7 @@ object FormVisor: TFormVisor
     Foot.Brush.Color = clBtnFace
     Foot.Font.Color = clBlue
     Legend.Alignment = laTopRight
-    Legend.BackgroundBrush.Color = clWhite
+    Legend.Brush.Color = clWhite
     Legend.Frame.Color = clBlack
     Legend.Frame.Visible = True
     Legend.UseSidebar = False
