@@ -66,6 +66,7 @@ Proyecto_Final_Interfaces/
 │   ├── disk.png                        # Icono AC disquete (marca de agua en gráfico)
 │   ├── f01.bmp / f02.bmp               # Glifos on/off de la grilla
 │   ├── f_003.bmp                       # Icono institucional de la aplicación
+│   ├── visor_lazarus/f_003.bmp         # Icono institucional copiado en ejecutable (también en Recursos Proyecto #3/)
 │   └── img1.png .. img6.png            # Colección de imágenes de paisajes de fondo
 ├── TLazSerial/                         # Paquete y librería serial para Lazarus
 ├── Recursos Proyecto #3/               # Recursos originales de Blackboard
@@ -78,6 +79,8 @@ Proyecto_Final_Interfaces/
 ```
 
 ---
+
+> **Nota:** Antes de ejecutar, instalar la dependencia Python con `pip install pyserial` y preparar un par de puertos seriales virtuales (ej: VSPE o com0com) `COM1 <--> COM2`.
 
 ## 3. Guía de Ejecución Rápida
 

@@ -440,6 +440,7 @@ begin
 
     if linea <> '' then
     begin
+      linea := StringReplace(linea, #13, '', [rfReplaceAll]);
       linea := StringReplace(linea, ',', '.', [rfReplaceAll]);
       fs := DefaultFormatSettings;
       fs.DecimalSeparator := '.';
@@ -471,7 +472,7 @@ begin
   if valNormal < 0.0 then valNormal := 0.0;
   if valNormal > 200.0 then valNormal := 200.0;
 
-  AgregarMuestra(Round(valNormal));
+  AgregarMuestra(Trunc(valNormal * 10.0) / 10.0);
 end;
 
 {------------------------------------------------------------------------------
@@ -547,3 +548,4 @@ begin
 end;
 
 end.
+

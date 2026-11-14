@@ -1,0 +1,30 @@
+# Artefactos y temporales del proyecto
+dbg.db
+extracted_pdf.txt
+pdf_images/
+video_frames/
+demo_07/
+visor_lazarus/visor_debug.log
+servidor_consola/sensores.db
+
+# Ejecutables y binarios
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.ppu
+*.lib
+*.a
+*.res
+*.dbg
+*.log
+
+# Archivos compilados de Lazarus/Free Pascal
+*.lpi
+*.lpr
+*.lfm
+*.pas
+
+# Archivos de video
+*.mp4
