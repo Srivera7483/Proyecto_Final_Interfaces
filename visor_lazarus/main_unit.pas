@@ -56,7 +56,7 @@ type
     procedure btnSaveClick(Sender: TObject);
     procedure btnGridToggleClick(Sender: TObject);
     procedure btnChangeBgClick(Sender: TObject);
-    procedure ChartVisorBeforeDrawBackWall(ASender: TChart; const ARect: TRect);
+    procedure ChartVisorAfterDrawBackWall(ASender: TChart; const ARect: TRect);
     procedure LazSerial1RxData(Sender: TObject);
     procedure tmrFallbackSimTimer(Sender: TObject);
 
@@ -335,7 +335,7 @@ end;
 {------------------------------------------------------------------------------
   ChartVisorBeforeDrawBackWall: Dibuja el fondo dinámico y el logo del disquete
  ------------------------------------------------------------------------------}
-procedure TFormVisor.ChartVisorBeforeDrawBackWall(ASender: TChart; const ARect: TRect);
+procedure TFormVisor.ChartVisorAfterDrawBackWall(ASender: TChart; const ARect: TRect);
 begin
   // Dibujar el fondo seleccionado actualmente
   if (Length(FBackgrounds) > 0) and Assigned(FBackgrounds[FCurrentBgIndex]) then

@@ -126,7 +126,7 @@ object FormVisor: TFormVisor
     Legend.Frame.Visible = True
     Legend.UseSidebar = False
     Legend.Visible = True
-    OnBeforeDrawBackWall = ChartVisorBeforeDrawBackWall
+    OnAfterDrawBackWall = ChartVisorAfterDrawBackWall
     Title.Brush.Color = clBtnFace
     Title.Font.Color = clBlue
     Title.Text.Strings = (
