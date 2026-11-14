@@ -118,15 +118,13 @@ object FormVisor: TFormVisor
         Title.Caption = 'Sampling MP 2.5um'
       end>
     BackColor = clWhite
-    Foot.Brush.Color = clBtnFace
     Foot.Font.Color = clBlue
     Legend.Alignment = laTopRight
-    Legend.BackgroundBrush.Color = clWhite
     Legend.Frame.Color = clBlack
     Legend.Frame.Visible = True
     Legend.UseSidebar = False
     Legend.Visible = True
-    OnBeforeDrawBackWall = ChartVisorBeforeDrawBackWall
+    OnAfterDrawBackWall = ChartVisorAfterDrawBackWall
     Title.Brush.Color = clBtnFace
     Title.Font.Color = clBlue
     Title.Text.Strings = (
