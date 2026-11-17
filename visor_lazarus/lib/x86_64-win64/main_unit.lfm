@@ -61,21 +61,6 @@ object FormVisor: TFormVisor
     ShowHint = True
     OnClick = btnGridToggleClick
   end
-  object btnChangeBg: TSpeedButton
-    Left = 968
-    Height = 44
-    Hint = 'Cambiar figura de fondo (background) del visor'
-    Top = 200
-    Width = 78
-    Caption = 'Click'
-    Font.Color = clBlack
-    Font.Height = -12
-    Font.Name = 'Tahoma'
-    Font.Style = [fsBold]
-    ParentFont = False
-    ShowHint = True
-    OnClick = btnChangeBgClick
-  end
   object ChartVisor: TChart
     Left = 15
     Height = 245
@@ -178,3 +163,5 @@ object FormVisor: TFormVisor
     Top = 120
   end
 end
+
+

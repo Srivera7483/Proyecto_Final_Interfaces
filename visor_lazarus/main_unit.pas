@@ -3,41 +3,60 @@ unit main_unit;
 {$mode objfpc}{$H+}
 
 {==============================================================================
-  PROYECTO #3 - INTERFACES GRÁFICAS (INFO1128)
-  UNIDAD: main_unit.pas - VISOR DE MATERIAL PARTICULADO MP 2.5 µm
+  PROYECTO #3 - INTERFACES GRAFICAS (INFO1128)
+  UNIDAD: main_unit.pas - VISOR DE MATERIAL PARTICULADO MP 2.5 um
   Autor: Kuro_Waza / INFO1128
   Docente: Alberto Caro | Ayudante: Daniela Romero
  ==============================================================================
-  Descripción:
-    Esta unidad contiene la interfaz gráfica de usuario completa exigida en
-    el Proyecto #3:
-      1. TChart con TLineSeries para 30 muestras continuas (rango 0 a 29).
-      2. Configuración estética completa: Legend, LinePen, Marks, Frame,
-         LabelBrush, Style, Pointer, SeriesColor.
-      3. Renderizado de fondos panorámicos e icono floppy AC (disk.png)
-         en el evento OnBeforeDrawBackWall.
-      4. Botón 'Save' (icono camara.png) para exportar captura a 'captura.png'.
-      5. Botón 'On/off' (iconos de toggle f01.bmp/f02.bmp) para alternar grilla.
-      6. Botón 'Click' (icono pale.png) para alternar figuras de fondo.
-      7. Componente TLazSerial configurado a 9600 Bps, 8N1 en COM2.
-      8. Cliente TCP/IP para enviar las muestras recibidas al Server Consola
-         en 127.0.0.1:5000.
-      9. Hints descriptivos activados en todos los botones y controles.
+  Cambios de esta version:
+    1. Boton 'Click' (btnChangeBg) cambia el fondo del visor. Mecanismo:
+         - BuscarRecursos localiza la carpeta con las imagenes (junto al .exe,
+           subiendo hasta 6 niveles y entrando a recursos/imagenes/iconos/fondos).
+         - FFondos guarda la lista de img*.png; FIdx es el fondo activo.
+         - El boton avanza FIdx (ciclico), recarga la imagen y repinta.
+         - El dibujo se hace en Chart.OnBeforeCustomDrawBackWall, con el fondo
+           escalado y guardado en cache (FBmp) para no recalcularlo en cada
+           repintado.
+    2. Bug 'se pega todo al apretar un boton': el envio TCP/IP se hacia en el
+       hilo de la interfaz (connect bloqueante cada segundo, hasta ~2 s en
+       Windows si el servidor no esta activo). Ahora lo hace un hilo aparte
+       (TEnvioTcp) y la interfaz nunca espera por la red.
+    3. Los botones se crean con GroupIndex = 0 para que no queden hundidos.
  ==============================================================================}
 
 interface
 
 uses
-  Classes, SysUtils, Forms, Controls, Graphics, Dialogs, StdCtrls, Buttons,
-  ExtCtrls, TAGraph, TASeries, TALegend, TACustomSeries, TATypes,
-  TAChartAxisUtils, TAChartUtils, LazSerial;
+  Classes, SysUtils, Math, Types, Forms, Controls, Graphics, Dialogs, StdCtrls,
+  Buttons, ExtCtrls, FileUtil, TAGraph, TASeries, TALegend, TACustomSeries,
+  TATypes, TAChartAxisUtils, TAChartUtils, TADrawUtils, TADrawerCanvas,
+  LazSerial, ssockets;
 
 const
   TOTAL_MUESTRAS = 30; // Ventana rodante de 30 muestras (0 .. 29)
   TCP_SERVER_IP = '127.0.0.1';
   TCP_SERVER_PORT = 5000;
+  MAX_COLA_TCP = 20;   // mensajes pendientes maximos hacia el servidor
 
 type
+
+  { TEnvioTcp: hilo que envia las muestras al servidor TCP/IP sin bloquear la GUI }
+
+  TEnvioTcp = class(TThread)
+  private
+    FLock: TRTLCriticalSection;
+    FCola: TStringList;
+    FEvt: PRTLEvent;
+    function Tomar(out AMsg: String): Boolean;
+    function Enviar(const AMsg: String): Boolean;
+  protected
+    procedure Execute; override;
+  public
+    constructor Create;
+    destructor Destroy; override;
+    procedure Encolar(const AMsg: String);
+    procedure Detener;
+  end;
 
   { TFormVisor }
 
@@ -56,25 +75,38 @@ type
     procedure btnSaveClick(Sender: TObject);
     procedure btnGridToggleClick(Sender: TObject);
     procedure btnChangeBgClick(Sender: TObject);
-    procedure ChartVisorAfterDrawBackWall(ASender: TChart; const ARect: TRect);
+    { Se mantiene por compatibilidad con el .lfm antiguo (no hace nada).
+      El fondo ahora se dibuja en ChartVisorBackWall. }
+    procedure ChartVisorAfterDrawBackWall(ASender: TChart; ACanvas: TCanvas;
+      const ARect: TRect);
     procedure LazSerial1RxData(Sender: TObject);
     procedure tmrFallbackSimTimer(Sender: TObject);
 
   private
-    { Imágenes y recursos gráficos }
-    FBackgrounds: array of Graphics.TGraphic;
-    FCurrentBgIndex: Integer;
-    FDiskBmp: Graphics.TGraphic;
-    FGlyphOn: Graphics.TBitmap;
-    FGlyphOff: Graphics.TBitmap;
+    { Recursos graficos }
+    FRec: String;               // carpeta de recursos encontrada
+    FFondos: TStringList;       // rutas de las imagenes de fondo
+    FIdx: Integer;              // fondo actual
+    FPic: TPicture;             // imagen de fondo original
+    FBmp: TBitmap;              // fondo escalado al area del grafico (cache)
+    FDiskPic: TPicture;         // logo disquete AC
 
-    { Variables para serie temporal }
+    { Serie temporal }
     FSerialBuffer: AnsiString;
     FMuestras: array[0..TOTAL_MUESTRAS - 1] of Double;
     FMuestrasCount: Integer;
 
-    { Métodos internos }
+    { Red }
+    FTcp: TEnvioTcp;
+
+    function BuscarRecursos: String;
+    function BuscarArchivo(const ANombre: String): String;
+    procedure CargarGlyph(ABtn: TSpeedButton; const ANombres: array of String);
     procedure CargarRecursosGraficos;
+    procedure CargarFondo;
+    procedure ChartVisorBackWall(ASender: TChart; ADrawer: IChartDrawer;
+      const ARect: TRect; var ADoDefaultDrawing: Boolean);
+    procedure ConfigurarBotones;
     procedure InicializarGrafico;
     procedure AgregarMuestra(AValor: Double);
     procedure EnviarATcpServer(AValor: Double);
@@ -89,13 +121,110 @@ var
 
 implementation
 
-uses
-  Windows, WinSock2;
-
 {$R *.lfm}
 
+{ ============================ TEnvioTcp ====================================== }
+
+constructor TEnvioTcp.Create;
+begin
+  inherited Create(True);          // creado suspendido: se inicializa antes de correr
+  FreeOnTerminate := True;
+  InitCriticalSection(FLock);
+  FCola := TStringList.Create;
+  FEvt := RTLEventCreate;
+  Start;
+end;
+
+destructor TEnvioTcp.Destroy;
+begin
+  RTLEventDestroy(FEvt);
+  FCola.Free;
+  DoneCriticalSection(FLock);
+  inherited Destroy;
+end;
+
+procedure TEnvioTcp.Encolar(const AMsg: String);
+begin
+  EnterCriticalSection(FLock);
+  try
+    while FCola.Count >= MAX_COLA_TCP do
+      FCola.Delete(0);             // descarta lo mas antiguo si el servidor no responde
+    FCola.Add(AMsg);
+  finally
+    LeaveCriticalSection(FLock);
+  end;
+  RTLEventSetEvent(FEvt);
+end;
+
+procedure TEnvioTcp.Detener;
+begin
+  Terminate;
+  RTLEventSetEvent(FEvt);          // despierta el hilo; se libera solo (FreeOnTerminate)
+end;
+
+function TEnvioTcp.Tomar(out AMsg: String): Boolean;
+begin
+  AMsg := '';
+  EnterCriticalSection(FLock);
+  try
+    Result := FCola.Count > 0;
+    if Result then
+    begin
+      AMsg := FCola[0];
+      FCola.Delete(0);
+    end;
+  finally
+    LeaveCriticalSection(FLock);
+  end;
+end;
+
+function TEnvioTcp.Enviar(const AMsg: String): Boolean;
+var
+  sock: TInetSocket;
+begin
+  Result := False;
+  try
+    sock := TInetSocket.Create(TCP_SERVER_IP, TCP_SERVER_PORT); // el constructor conecta
+    try
+      sock.WriteBuffer(AMsg[1], Length(AMsg));
+      Result := True;
+    finally
+      sock.Free;
+    end;
+  except
+    // servidor no disponible: se ignora, se reintenta con la proxima muestra
+  end;
+end;
+
+procedure TEnvioTcp.Execute;
+var
+  msg: String;
+begin
+  while not Terminated do
+  begin
+    RTLEventWaitFor(FEvt, 1000);
+    RTLEventResetEvent(FEvt);
+    while (not Terminated) and Tomar(msg) do
+    begin
+      if not Enviar(msg) then
+      begin
+        // sin servidor: vaciar la cola para no acumular muestras viejas
+        EnterCriticalSection(FLock);
+        try
+          FCola.Clear;
+        finally
+          LeaveCriticalSection(FLock);
+        end;
+        Break;
+      end;
+    end;
+  end;
+end;
+
+{ ============================ TFormVisor ===================================== }
+
 {------------------------------------------------------------------------------
-  FormCreate: Inicialización de la ventana, carga de recursos y configuración
+  FormCreate: Inicializacion de la ventana, carga de recursos y configuracion
  ------------------------------------------------------------------------------}
 procedure TFormVisor.FormCreate(Sender: TObject);
 begin
@@ -103,136 +232,280 @@ begin
   DoubleBuffered := True;
   FMuestrasCount := 0;
   FSerialBuffer := '';
-  FCurrentBgIndex := 0;
+  FIdx := 0;
 
-  // 1. Cargar imágenes desde el directorio del ejecutable
+  FFondos := TStringList.Create;
+  FPic := TPicture.Create;
+  FDiskPic := TPicture.Create;
+
+  // 1. Cargar imagenes e iconos
   CargarRecursosGraficos;
 
   // 2. Configurar TAChart, serie, ejes y leyendas
   InicializarGrafico;
 
-  // 3. Iniciar componente serial TLazSerial (COM2, 9600-8N1)
+  // 3. Botones y eventos asignados por codigo (no dependen del .lfm)
+  ConfigurarBotones;
+  ChartVisor.OnBeforeCustomDrawBackWall := @ChartVisorBackWall;
+
+  // 4. Mostrar el primer fondo
+  CargarFondo;
+
+  // 5. Hilo de envio TCP/IP (no bloquea la interfaz)
+  FTcp := TEnvioTcp.Create;
+
+  // 6. Iniciar componente serial TLazSerial (COM2, 9600-8N1)
   IniciarComunicacionSerial;
 end;
 
 {------------------------------------------------------------------------------
-  FormDestroy: Liberación segura de recursos de memoria y puerto serial
+  FormDestroy: Liberacion de recursos
  ------------------------------------------------------------------------------}
 procedure TFormVisor.FormDestroy(Sender: TObject);
-var
-  i: Integer;
 begin
+  tmrFallbackSim.Enabled := False;
   try
     if LazSerial1.Active then
       LazSerial1.Close;
   except
   end;
 
-  for i := 0 to High(FBackgrounds) do
-    if Assigned(FBackgrounds[i]) then
-      FBackgrounds[i].Free;
-  SetLength(FBackgrounds, 0);
+  if Assigned(FTcp) then
+  begin
+    FTcp.Detener;                  // el hilo se libera solo
+    FTcp := nil;
+  end;
 
-  if Assigned(FDiskBmp) then FDiskBmp.Free;
-  if Assigned(FGlyphOn) then FGlyphOn.Free;
-  if Assigned(FGlyphOff) then FGlyphOff.Free;
+  FreeAndNil(FBmp);
+  FreeAndNil(FPic);
+  FreeAndNil(FDiskPic);
+  FreeAndNil(FFondos);
 end;
 
 {------------------------------------------------------------------------------
-  CargarRecursosGraficos: Carga glifos, fondos y logos desde archivos locales
+  BuscarRecursos: carpeta del .exe y hasta 6 niveles arriba; tambien entra
+  (recursivo) a recursos / imagenes / iconos / fondos.
+ ------------------------------------------------------------------------------}
+function TFormVisor.BuscarRecursos: String;
+const
+  Probar: array[0..2] of String = ('pale.png', 'img1.png', 'f01.bmp');
+  Subs: array[0..3] of String = ('recursos', 'imagenes', 'iconos', 'fondos');
+var
+  d, sub: String;
+  i, j, k: Integer;
+  L: TStringList;
+begin
+  Result := '';
+  d := ExtractFilePath(ParamStr(0));
+  for i := 0 to 6 do
+  begin
+    for k := 0 to High(Probar) do
+      if FileExists(d + Probar[k]) then Exit(d);
+    for j := 0 to High(Subs) do
+    begin
+      sub := Subs[j];
+      if DirectoryExists(d + sub) then
+      begin
+        L := TStringList.Create;
+        try
+          FindAllFiles(L, d + sub, 'pale.png;img1.png;f01.bmp', True);
+          if L.Count > 0 then Exit(d + sub + PathDelim);
+        finally
+          L.Free;
+        end;
+      end;
+    end;
+    if d = ExtractFilePath(ExcludeTrailingPathDelimiter(d)) then Break;
+    d := ExtractFilePath(ExcludeTrailingPathDelimiter(d));
+  end;
+end;
+
+{ Busca un archivo por nombre dentro de la carpeta de recursos (recursivo) }
+function TFormVisor.BuscarArchivo(const ANombre: String): String;
+var
+  L: TStringList;
+begin
+  Result := '';
+  L := TStringList.Create;
+  try
+    if FRec <> '' then
+      FindAllFiles(L, FRec, ANombre, True);
+    if L.Count = 0 then
+      FindAllFiles(L, ExtractFilePath(ParamStr(0)), ANombre, False);
+    if L.Count > 0 then
+      Result := L[0];
+  finally
+    L.Free;
+  end;
+end;
+
+{ Carga el primer icono existente de la lista en el Glyph del boton }
+procedure TFormVisor.CargarGlyph(ABtn: TSpeedButton;
+  const ANombres: array of String);
+var
+  i: Integer;
+  f: String;
+  Pic: TPicture;
+begin
+  for i := 0 to High(ANombres) do
+  begin
+    f := BuscarArchivo(ANombres[i]);
+    if f = '' then Continue;
+    Pic := TPicture.Create;
+    try
+      try
+        Pic.LoadFromFile(f);
+        ABtn.Glyph.Assign(Pic.Graphic);
+        Exit;
+      except
+        // icono danado: probar el siguiente
+      end;
+    finally
+      Pic.Free;
+    end;
+  end;
+end;
+
+{------------------------------------------------------------------------------
+  CargarRecursosGraficos: fondos, iconos de botones, icono de ventana y logo
  ------------------------------------------------------------------------------}
 procedure TFormVisor.CargarRecursosGraficos;
 var
-  resPath, fname: String;
-  bgNames: array[0..5] of String;
-  i: Integer;
-  pngImg: TPortableNetworkGraphic;
-  bmpImg: Graphics.TBitmap;
+  f: String;
+  bmpImg: TBitmap;
 begin
-  resPath := ExtractFilePath(Application.ExeName);
+  FRec := BuscarRecursos;
 
-  // Icono del formulario (f_003.bmp)
-  fname := resPath + 'f_003.bmp';
-  if FileExists(fname) then
+  // Fondos: img1..img6.png (Fondos.png es el collage y se excluye por el patron)
+  if FRec <> '' then
+    FindAllFiles(FFondos, FRec, 'img*.png;*.jpg;*.jpeg', True);
+  if FFondos.Count = 0 then  // plan B: forest.png / mont.png junto al .exe
+    FindAllFiles(FFondos, ExtractFilePath(ParamStr(0)), 'forest.png;mont.png', False);
+  FFondos.Sort;
+
+  if FFondos.Count = 0 then
+    ShowMessage('No se encontraron imagenes de fondo.' + LineEnding +
+      'Copie img1..img6.png, pale.png y los .bmp en una carpeta "recursos" ' +
+      'junto al proyecto o junto al .exe.' + LineEnding +
+      'Carpeta del exe: ' + ExtractFilePath(ParamStr(0)));
+
+  // Iconos de los botones (f01 = camara, f02 = check On/off, pale = paleta)
+  CargarGlyph(btnSave, ['camara.png', 'f01.bmp']);
+  CargarGlyph(btnGridToggle, ['f02.bmp']);
+  CargarGlyph(btnChangeBg, ['pale.png']);
+
+  // Icono del formulario
+  f := BuscarArchivo('f_003.bmp');
+  if f <> '' then
   begin
-    bmpImg := Graphics.TBitmap.Create;
+    bmpImg := TBitmap.Create;
     try
-      bmpImg.LoadFromFile(fname);
-      Icon.Assign(bmpImg);
+      try
+        bmpImg.LoadFromFile(f);
+        Icon.Assign(bmpImg);
+      except
+      end;
     finally
       bmpImg.Free;
     end;
   end;
 
-  // Glifos para botón On/off (f01.bmp y f02.bmp)
-  FGlyphOn := Graphics.TBitmap.Create;
-  FGlyphOff := Graphics.TBitmap.Create;
-  if FileExists(resPath + 'f01.bmp') then
-    FGlyphOn.LoadFromFile(resPath + 'f01.bmp');
-  if FileExists(resPath + 'f02.bmp') then
-    FGlyphOff.LoadFromFile(resPath + 'f02.bmp');
-
-  if FGlyphOn.Width > 0 then
-    btnGridToggle.Glyph.Assign(FGlyphOn);
-
-  // Icono de la cámara fotográfica para botón 'Save' (camara.png)
-  fname := resPath + 'camara.png';
-  if FileExists(fname) then
-  begin
-    pngImg := TPortableNetworkGraphic.Create;
-    try
-      pngImg.LoadFromFile(fname);
-      btnSave.Glyph.Assign(pngImg);
-    finally
-      pngImg.Free;
-    end;
+  // Logo del disquete AC (disk.png)
+  f := BuscarArchivo('disk.png');
+  if f <> '' then
+  try
+    FDiskPic.LoadFromFile(f);
+  except
+    FDiskPic.Clear;
   end;
+end;
 
-  // Icono de la paleta de colores para botón 'Click' (pale.png)
-  fname := resPath + 'pale.png';
-  if FileExists(fname) then
-  begin
-    pngImg := TPortableNetworkGraphic.Create;
-    try
-      pngImg.LoadFromFile(fname);
-      btnChangeBg.Glyph.Assign(pngImg);
-    finally
-      pngImg.Free;
-    end;
+{------------------------------------------------------------------------------
+  CargarFondo: carga la imagen FFondos[FIdx], descarta el cache y repinta
+ ------------------------------------------------------------------------------}
+procedure TFormVisor.CargarFondo;
+begin
+  FreeAndNil(FBmp);                  // se rehace con el nuevo fondo
+  FPic.Clear;
+  if (FFondos.Count > 0) and (FIdx >= 0) and (FIdx < FFondos.Count) then
+  try
+    FPic.LoadFromFile(FFondos[FIdx]);
+  except
+    FPic.Clear;
   end;
+  ChartVisor.Invalidate;
+end;
 
-  // Icono del disquete (disk.png) - marca de agua AC
-  fname := resPath + 'disk.png';
-  if FileExists(fname) then
-  begin
-    pngImg := TPortableNetworkGraphic.Create;
-    pngImg.LoadFromFile(fname);
-    FDiskBmp := pngImg;
-  end
+{------------------------------------------------------------------------------
+  ChartVisorBackWall: dibuja el fondo "cubriendo" el area del grafico (sin
+  deformar, centrado) y despues el logo AC. Usa el canvas del drawer, por lo
+  que tambien sale correcto al guardar la captura.
+ ------------------------------------------------------------------------------}
+procedure TFormVisor.ChartVisorBackWall(ASender: TChart; ADrawer: IChartDrawer;
+  const ARect: TRect; var ADoDefaultDrawing: Boolean);
+var
+  ic: IChartTCanvasDrawer;
+  Cv: TCanvas;
+  w, h, sw, sh, ox, oy: Integer;
+  sc: Double;
+begin
+  if (FPic = nil) or (FPic.Graphic = nil) or FPic.Graphic.Empty then Exit;
+  w := ARect.Right - ARect.Left;
+  h := ARect.Bottom - ARect.Top;
+  if (w < 4) or (h < 4) then Exit;
+
+  if Supports(ADrawer, IChartTCanvasDrawer, ic) then
+    Cv := ic.Canvas
   else
-    FDiskBmp := nil;
+    Cv := ASender.Canvas;
 
-  // Fondos panorámicos del visor (img1 .. img6)
-  bgNames[0] := 'img1.png';
-  bgNames[1] := 'img2.png';
-  bgNames[2] := 'img3.png';
-  bgNames[3] := 'img4.png';
-  bgNames[4] := 'img5.png';
-  bgNames[5] := 'img6.png';
-
-  SetLength(FBackgrounds, 6);
-  for i := 0 to 5 do
+  // Escalar solo cuando cambia el fondo o el tamano del area (cache en FBmp)
+  if (FBmp = nil) or (FBmp.Width <> w) or (FBmp.Height <> h) then
   begin
-    fname := resPath + bgNames[i];
-    if FileExists(fname) then
-    begin
-      pngImg := TPortableNetworkGraphic.Create;
-      pngImg.LoadFromFile(fname);
-      FBackgrounds[i] := pngImg;
-    end
-    else
-      FBackgrounds[i] := nil;
+    FBmp.Free;
+    FBmp := TBitmap.Create;
+    FBmp.SetSize(w, h);
+    sc := Max(w / FPic.Width, h / FPic.Height);
+    sw := Round(FPic.Width * sc);
+    sh := Round(FPic.Height * sc);
+    ox := (sw - w) div 2;
+    oy := (sh - h) div 2;
+    FBmp.Canvas.StretchDraw(Rect(-ox, -oy, sw - ox, sh - oy), FPic.Graphic);
   end;
+
+  Cv.Draw(ARect.Left, ARect.Top, FBmp);
+
+  // Logo del disquete AC en la esquina superior izquierda
+  if (FDiskPic.Graphic <> nil) and (not FDiskPic.Graphic.Empty) then
+    Cv.Draw(ARect.Left + 12, ARect.Top + 8, FDiskPic.Graphic);
+
+  ADoDefaultDrawing := False;        // el chart no pinta la pared encima
+end;
+
+{ Compatibilidad con .lfm antiguos: no dibuja nada (el fondo se dibuja arriba) }
+procedure TFormVisor.ChartVisorAfterDrawBackWall(ASender: TChart;
+  ACanvas: TCanvas; const ARect: TRect);
+begin
+end;
+
+{------------------------------------------------------------------------------
+  ConfigurarBotones: eventos por codigo y botones que no quedan "pegados"
+ ------------------------------------------------------------------------------}
+procedure TFormVisor.ConfigurarBotones;
+begin
+  btnSave.GroupIndex := 0;
+  btnGridToggle.GroupIndex := 0;
+  btnChangeBg.GroupIndex := 0;
+  btnSave.AllowAllUp := False;
+  btnGridToggle.AllowAllUp := False;
+  btnChangeBg.AllowAllUp := False;
+  btnSave.Down := False;
+  btnGridToggle.Down := False;
+  btnChangeBg.Down := False;
+
+  btnSave.OnClick := @btnSaveClick;
+  btnGridToggle.OnClick := @btnGridToggleClick;
+  btnChangeBg.OnClick := @btnChangeBgClick;
 end;
 
 {------------------------------------------------------------------------------
@@ -248,7 +521,7 @@ begin
   ChartVisor.LeftAxis.Range.Min := 0;
   ChartVisor.LeftAxis.Range.UseMax := True;
   ChartVisor.LeftAxis.Range.Max := 200;
-  ChartVisor.LeftAxis.Grid.Visible := False; // Inicia desactivada (Punto 7)
+  ChartVisor.LeftAxis.Grid.Visible := False; // Inicia desactivada
   ChartVisor.LeftAxis.Grid.Color := clBlack;
   ChartVisor.LeftAxis.Grid.Style := psDot;
 
@@ -260,7 +533,7 @@ begin
   ChartVisor.BottomAxis.Range.Min := 0;
   ChartVisor.BottomAxis.Range.UseMax := True;
   ChartVisor.BottomAxis.Range.Max := TOTAL_MUESTRAS - 1;
-  ChartVisor.BottomAxis.Grid.Visible := False; // Inicia desactivada (Punto 7)
+  ChartVisor.BottomAxis.Grid.Visible := False; // Inicia desactivada
   ChartVisor.BottomAxis.Grid.Color := clBlack;
   ChartVisor.BottomAxis.Grid.Style := psDot;
 
@@ -272,23 +545,23 @@ begin
   ChartVisor.Legend.Frame.Color := clBlack;
   ChartVisor.Legend.BackgroundBrush.Color := clWhite;
 
-  // Configuración de la serie TLineSeries (Puntos 10 y 11)
+  // Configuracion de la serie TLineSeries
   SerieMP25.Title := 'MP 2.5 um';
   SerieMP25.ShowPoints := True;
   SerieMP25.SeriesColor := clRed;
   SerieMP25.LinePen.Color := clRed;
   SerieMP25.LinePen.Width := 1;
 
-  // Pointer: Cuadrado azul con contorno amarillo (Pointer)
+  // Pointer: cuadrado azul con contorno amarillo
   SerieMP25.Pointer.Visible := True;
   SerieMP25.Pointer.Style := psRectangle;
-  SerieMP25.Pointer.Brush.Color := clHighlight; // Azul
-  SerieMP25.Pointer.Pen.Color := clYellow;      // Amarillo
+  SerieMP25.Pointer.Brush.Color := clHighlight;
+  SerieMP25.Pointer.Pen.Color := clYellow;
   SerieMP25.Pointer.Pen.Width := 1;
   SerieMP25.Pointer.HorizSize := 4;
   SerieMP25.Pointer.VertSize := 4;
 
-  // Marks: Caja blanca con borde negro mostrando valor (Marks, Frame, LabelBrush)
+  // Marks: caja blanca con borde negro mostrando valor
   SerieMP25.Marks.Visible := True;
   SerieMP25.Marks.Style := smsValue;
   SerieMP25.Marks.Format := '%0:.0f';
@@ -299,7 +572,7 @@ begin
   SerieMP25.Marks.Distance := 4;
   SerieMP25.Marks.Arrow.Visible := False;
 
-  // Hints descriptivos en cada botón (Punto 9)
+  // Hints descriptivos en cada boton
   btnSave.Hint := 'Guardar captura de pantalla en captura.png';
   btnSave.ShowHint := True;
   btnGridToggle.Hint := 'Activar / Desactivar grilla del visor';
@@ -333,89 +606,66 @@ begin
 end;
 
 {------------------------------------------------------------------------------
-  ChartVisorBeforeDrawBackWall: Dibuja el fondo dinámico y el logo del disquete
- ------------------------------------------------------------------------------}
-procedure TFormVisor.ChartVisorAfterDrawBackWall(ASender: TChart; const ARect: TRect);
-begin
-  // Dibujar el fondo seleccionado actualmente
-  if (Length(FBackgrounds) > 0) and Assigned(FBackgrounds[FCurrentBgIndex]) then
-  begin
-    ASender.Canvas.StretchDraw(ARect, FBackgrounds[FCurrentBgIndex]);
-  end;
-
-  // Dibujar el logo del disquete (AC) en la esquina superior izquierda
-  if Assigned(FDiskBmp) then
-  begin
-    ASender.Canvas.Draw(ARect.Left + 12, ARect.Top + 8, FDiskBmp);
-  end;
-end;
-
-{------------------------------------------------------------------------------
-  btnGridToggleClick: Requerimiento 7 -> Activa / Desactiva la grilla
+  btnGridToggleClick: Activa / Desactiva la grilla
  ------------------------------------------------------------------------------}
 procedure TFormVisor.btnGridToggleClick(Sender: TObject);
 var
   isGridOn: Boolean;
 begin
   isGridOn := not ChartVisor.LeftAxis.Grid.Visible;
-
   ChartVisor.LeftAxis.Grid.Visible := isGridOn;
   ChartVisor.BottomAxis.Grid.Visible := isGridOn;
-
-  if isGridOn then
-  begin
-    if FGlyphOn.Width > 0 then
-      btnGridToggle.Glyph.Assign(FGlyphOn);
-  end
-  else
-  begin
-    if FGlyphOff.Width > 0 then
-      btnGridToggle.Glyph.Assign(FGlyphOff);
-  end;
-
   ChartVisor.Invalidate;
 end;
 
 {------------------------------------------------------------------------------
-  btnChangeBgClick: Requerimiento 8 -> Cambia secuencialmente la imagen de fondo
+  btnChangeBgClick: cambia al siguiente fondo (ciclico) y repinta
  ------------------------------------------------------------------------------}
 procedure TFormVisor.btnChangeBgClick(Sender: TObject);
 begin
-  if Length(FBackgrounds) > 0 then
+  if FFondos.Count = 0 then
   begin
-    FCurrentBgIndex := (FCurrentBgIndex + 1) mod Length(FBackgrounds);
-    ChartVisor.Invalidate;
+    ShowMessage('No hay imagenes de fondo cargadas.' + LineEnding +
+      'Carpeta del exe: ' + ExtractFilePath(ParamStr(0)));
+    Exit;
   end;
+  FIdx := (FIdx + 1) mod FFondos.Count;
+  CargarFondo;
 end;
 
 {------------------------------------------------------------------------------
-  btnSaveClick: Requerimiento 6 -> Guarda captura de pantalla a captura.png
+  btnSaveClick: guarda captura de pantalla a captura.png
  ------------------------------------------------------------------------------}
 procedure TFormVisor.btnSaveClick(Sender: TObject);
 var
-  Bmp: Graphics.TBitmap;
+  Bmp: TBitmap;
   Png: TPortableNetworkGraphic;
   OutFile: String;
+  p: TPoint;
 begin
-  Bmp := Graphics.TBitmap.Create;
+  OutFile := ExtractFilePath(ParamStr(0)) + 'captura.png';
+  Bmp := TBitmap.Create;
   Png := TPortableNetworkGraphic.Create;
   try
     Bmp.SetSize(Self.ClientWidth, Self.ClientHeight);
     Self.PaintTo(Bmp.Canvas, 0, 0);
 
-    Png.Assign(Bmp);
-    OutFile := ExtractFilePath(Application.ExeName) + 'captura.png';
-    Png.SaveToFile(OutFile);
+    // Repintar el grafico directamente sobre la captura (garantiza fondo y serie)
+    p := ScreenToClient(ChartVisor.ClientToScreen(Point(0, 0)));
+    ChartVisor.PaintOnCanvas(Bmp.Canvas,
+      Rect(p.X, p.Y, p.X + ChartVisor.Width, p.Y + ChartVisor.Height));
 
-    ShowMessage('Captura realizada con éxito:' + LineEnding + OutFile);
+    Png.Assign(Bmp);
+    Png.SaveToFile(OutFile);
   finally
     Png.Free;
     Bmp.Free;
   end;
+  ShowMessage('Captura realizada con exito' + LineEnding + OutFile);
 end;
 
 {------------------------------------------------------------------------------
-  LazSerial1RxData: Requerimiento 4 -> Recibe datos del script de Python
+  LazSerial1RxData: recibe datos del script de Python (9600 8N1)
  ------------------------------------------------------------------------------}
 procedure TFormVisor.LazSerial1RxData(Sender: TObject);
 var
@@ -447,16 +697,19 @@ begin
 
       if TryStrToFloat(linea, valNum, fs) then
       begin
-        // Desactivar simulación de contingencia al recibir datos reales
+        // Desactivar simulacion de contingencia al recibir datos reales
         tmrFallbackSim.Enabled := False;
         AgregarMuestra(valNum);
       end;
     end;
   end;
+
+  if Length(FSerialBuffer) > 4096 then
+    FSerialBuffer := '';             // proteccion si llega basura
 end;
 
 {------------------------------------------------------------------------------
-  tmrFallbackSimTimer: Generador de contingencia N(80,5) si no hay puerto serial
+  tmrFallbackSimTimer: generador de contingencia N(80,5) si no hay puerto serial
  ------------------------------------------------------------------------------}
 procedure TFormVisor.tmrFallbackSimTimer(Sender: TObject);
 var
@@ -476,7 +729,7 @@ begin
 end;
 
 {------------------------------------------------------------------------------
-  AgregarMuestra: Mantiene la ventana rodante de 30 muestras en TAChart
+  AgregarMuestra: ventana rodante de 30 muestras en TAChart
  ------------------------------------------------------------------------------}
 procedure TFormVisor.AgregarMuestra(AValor: Double);
 var
@@ -506,48 +759,22 @@ begin
     SerieMP25.EndUpdate;
   end;
 
-  // Requerimiento 12: Reenviar al Servidor Consola TCP/IP + SQLite
+  // Reenviar al Servidor Consola TCP/IP + SQLite (sin bloquear la interfaz)
   EnviarATcpServer(AValor);
 end;
 
 {------------------------------------------------------------------------------
-  EnviarATcpServer: Requerimiento 12 -> Envío TCP/IP a 127.0.0.1:5000
+  EnviarATcpServer: solo encola el mensaje; el hilo TEnvioTcp lo envia a
+  127.0.0.1:5000
  ------------------------------------------------------------------------------}
 procedure TFormVisor.EnviarATcpServer(AValor: Double);
 var
-  wsaData: TWSAData;
-  sock: TSocket;
-  serverAddr: TSockAddrIn;
-  msg: AnsiString;
   fs: TFormatSettings;
 begin
-  if WSAStartup(MAKEWORD(2, 2), wsaData) <> 0 then Exit;
-
-  sock := socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-  if sock = INVALID_SOCKET then
-  begin
-    WSACleanup();
-    Exit;
-  end;
-
-  FillChar(serverAddr, SizeOf(serverAddr), 0);
-  serverAddr.sin_family := AF_INET;
-  serverAddr.sin_port := htons(TCP_SERVER_PORT);
-  serverAddr.sin_addr.s_addr := inet_addr(PAnsiChar(AnsiString(TCP_SERVER_IP)));
-
-  if connect(sock, @serverAddr, SizeOf(serverAddr)) = 0 then
-  begin
-    fs := DefaultFormatSettings;
-    fs.DecimalSeparator := '.';
-    msg := FloatToStr(AValor, fs) + #10;
-    send(sock, PAnsiChar(msg), Length(msg), 0);
-  end;
-
-  closesocket(sock);
-  WSACleanup();
+  if FTcp = nil then Exit;
+  fs := DefaultFormatSettings;
+  fs.DecimalSeparator := '.';
+  FTcp.Encolar(FloatToStr(AValor, fs) + #10);
 end;
 
 end.
-
-
-
