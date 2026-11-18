@@ -32,7 +32,7 @@ object FormVisor: TFormVisor
     ParentFont = False
   end
   object btnSave: TSpeedButton
-    Left = 780
+    Left = 683
     Height = 32
     Hint = 'Guardar captura de pantalla en captura.png'
     Top = 10
@@ -42,12 +42,13 @@ object FormVisor: TFormVisor
     Font.Height = -12
     Font.Name = 'Tahoma'
     Font.Style = [fsBold]
+    GroupIndex = 0
     ParentFont = False
     ShowHint = True
     OnClick = btnSaveClick
   end
   object btnGridToggle: TSpeedButton
-    Left = 875
+    Left = 778
     Height = 32
     Hint = 'Activar / Desactivar la grilla del visor'
     Top = 10
@@ -57,9 +58,26 @@ object FormVisor: TFormVisor
     Font.Height = -12
     Font.Name = 'Tahoma'
     Font.Style = [fsBold]
+    GroupIndex = 0
     ParentFont = False
     ShowHint = True
     OnClick = btnGridToggleClick
+  end
+  object btnChangeBg: TSpeedButton
+    Left = 873
+    Height = 32
+    Hint = 'Cambiar figura de fondo (background) del visor'
+    Top = 10
+    Width = 85
+    Caption = 'Click'
+    Font.Color = clBlack
+    Font.Height = -12
+    Font.Name = 'Tahoma'
+    Font.Style = [fsBold]
+    GroupIndex = 0
+    ParentFont = False
+    ShowHint = True
+    OnClick = btnChangeBgClick
   end
   object ChartVisor: TChart
     Left = 15

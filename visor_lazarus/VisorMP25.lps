@@ -8,9 +8,9 @@
       <Unit>
         <Filename Value="VisorMP25.lpr"/>
         <IsPartOfProject Value="True"/>
-        <EditorIndex Value="2"/>
+        <EditorIndex Value="3"/>
         <CursorPos Y="23"/>
-        <UsageCount Value="22"/>
+        <UsageCount Value="23"/>
         <Loaded Value="True"/>
       </Unit>
       <Unit>
@@ -21,21 +21,30 @@
         <ResourceBaseClass Value="Form"/>
         <TopLine Value="511"/>
         <CursorPos X="40" Y="524"/>
-        <UsageCount Value="22"/>
+        <UsageCount Value="23"/>
         <Loaded Value="True"/>
         <LoadedDesigner Value="True"/>
       </Unit>
       <Unit>
         <Filename Value="C:\lazarus\lcl\include\speedbutton.inc"/>
-        <IsVisibleTab Value="True"/>
         <EditorIndex Value="1"/>
-        <TopLine Value="651"/>
+        <TopLine Value="652"/>
         <CursorPos X="79" Y="675"/>
         <UsageCount Value="10"/>
         <Loaded Value="True"/>
       </Unit>
+      <Unit>
+        <Filename Value="C:\PerfLogs\onlinepackagemanager\packages\LazSerial\lazserial.pas"/>
+        <UnitName Value="LazSerial"/>
+        <IsVisibleTab Value="True"/>
+        <EditorIndex Value="2"/>
+        <TopLine Value="281"/>
+        <CursorPos Y="294"/>
+        <UsageCount Value="10"/>
+        <Loaded Value="True"/>
+      </Unit>
     </Units>
-    <JumpHistory HistoryIndex="12">
+    <JumpHistory HistoryIndex="13">
       <Position>
         <Filename Value="main_unit.pas"/>
       </Position>
@@ -86,6 +95,10 @@
       <Position>
         <Filename Value="main_unit.pas"/>
         <Caret Line="524" Column="40" TopLine="511"/>
+      </Position>
+      <Position>
+        <Filename Value="C:\lazarus\lcl\include\speedbutton.inc"/>
+        <Caret Line="675" Column="79" TopLine="652"/>
       </Position>
     </JumpHistory>
     <RunParams>
